@@ -127,6 +127,16 @@ npm test
 npm run build
 ```
 
+## 发布
+
+npm 包通过 [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) 由 GitHub Actions 发布（[`publish.yml`](.github/workflows/publish.yml)），无需 token，并自动附带 provenance：
+
+```bash
+npm version patch            # 更新 package.json 版本并打 tag
+git push --follow-tags
+gh release create "v$(node -p 'require("./package.json").version')" --generate-notes
+```
+
 ## License
 
 [MIT](LICENSE)
