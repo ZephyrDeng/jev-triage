@@ -3,7 +3,7 @@
 [中文说明在下方] Map a GitHub or GitLab backlog into one HTML report: duplicate groups, related topics, issue types and dependency order. Deterministic code fetches, cleans, recalls candidates and builds the graph; [TypeSafe Jev](https://docs.typesafe.ai) answers only narrow typed questions (duplicate? which comes first? what type?). Works through `gh` (GitHub / GitHub Enterprise) or `glab` (GitLab), read-only.
 
 ```bash
-npm install -g jev-triage
+npm install -g @zephyrdeng/jev-triage
 jev-triage analyze --project owner/repo --dry-run        # recall only, no model calls
 jev-triage analyze --project https://gitlab.com/group/proj # full analysis → out/overview-*.html
 ```
@@ -71,7 +71,7 @@ URL 与 `git@host:…` 中的主机优先；裸路径使用 `--host`（默认 `$
 要求 Node.js ≥20.12，以及已登录目标主机的 `gh`（GitHub）或 `glab`（GitLab）。
 
 ```bash
-npm install -g jev-triage
+npm install -g @zephyrdeng/jev-triage
 jev-triage --version
 jev-triage --help
 
@@ -89,7 +89,7 @@ jev-triage skill --path
 Pi 用户可以从全局 npm 安装位置加载整个包（包内已声明 `pi.skills`），或仅本次会话加载 skill：
 
 ```bash
-pi install "$(npm root -g)/jev-triage"
+pi install "$(npm root -g)/@zephyrdeng/jev-triage"
 # 或：不修改持久配置，只加载一次
 pi --skill "$(jev-triage skill --path)"
 ```

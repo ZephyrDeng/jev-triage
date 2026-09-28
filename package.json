@@ -1,5 +1,5 @@
 {
-  "name": "jev-triage",
+  "name": "@zephyrdeng/jev-triage",
   "version": "0.1.0",
   "description": "Triage a GitHub or GitLab backlog with TypeSafe Jev: duplicates, related topics, issue types and dependency order in one HTML report. Ships with an agent skill.",
   "keywords": [
