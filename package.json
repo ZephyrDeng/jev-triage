@@ -43,7 +43,7 @@
     ]
   },
   "bin": {
-    "jev-triage": "./dist/cli.js"
+    "jev-triage": "dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
