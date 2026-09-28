@@ -1,0 +1,60 @@
+{
+  "name": "backlog-atlas",
+  "version": "0.1.0",
+  "description": "Map a GitHub or GitLab backlog: duplicates, related topics, issue types and dependency order, rendered as a single-file HTML report. Ships with an agent skill.",
+  "keywords": [
+    "github",
+    "gitlab",
+    "issues",
+    "backlog",
+    "triage",
+    "dependency-graph",
+    "dedupe",
+    "cli",
+    "agent-skill"
+  ],
+  "license": "MIT",
+  "author": "ZephyrDeng",
+  "homepage": "https://github.com/ZephyrDeng/backlog-atlas#readme",
+  "bugs": {
+    "url": "https://github.com/ZephyrDeng/backlog-atlas/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZephyrDeng/backlog-atlas.git"
+  },
+  "type": "module",
+  "files": [
+    "dist/**/*.js",
+    "skills/",
+    "README.md",
+    ".env.example",
+    "LICENSE"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
+  "bin": {
+    "backlog-atlas": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
