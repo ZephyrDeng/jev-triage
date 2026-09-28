@@ -1,14 +1,16 @@
-# backlog-atlas
+# jev-triage
 
 [中文说明在下方] Map a GitHub or GitLab backlog into one HTML report: duplicate groups, related topics, issue types and dependency order. Deterministic code fetches, cleans, recalls candidates and builds the graph; [TypeSafe Jev](https://docs.typesafe.ai) answers only narrow typed questions (duplicate? which comes first? what type?). Works through `gh` (GitHub / GitHub Enterprise) or `glab` (GitLab), read-only.
 
 ```bash
-npm install -g github:ZephyrDeng/backlog-atlas
-backlog-atlas analyze --project owner/repo --dry-run        # recall only, no model calls
-backlog-atlas analyze --project https://gitlab.com/group/proj # full analysis → out/overview-*.html
+npm install -g jev-triage
+jev-triage analyze --project owner/repo --dry-run        # recall only, no model calls
+jev-triage analyze --project https://gitlab.com/group/proj # full analysis → out/overview-*.html
 ```
 
 Requires Node.js ≥ 20.12, `gh` or `glab` logged in to the target host, and `TYPESAFE_API_KEY` for model analysis. CLI output and reports are currently in Chinese.
+
+Independent community project, not affiliated with or endorsed by TypeSafe. "Jev" refers to TypeSafe's model, which this tool calls through the official SDK.
 
 ---
 
@@ -69,30 +71,30 @@ URL 与 `git@host:…` 中的主机优先；裸路径使用 `--host`（默认 `$
 要求 Node.js ≥20.12，以及已登录目标主机的 `gh`（GitHub）或 `glab`（GitLab）。
 
 ```bash
-npm install -g github:ZephyrDeng/backlog-atlas
-backlog-atlas --version
-backlog-atlas --help
+npm install -g jev-triage
+jev-triage --version
+jev-triage --help
 
 # 在任意工作目录调用 CLI，缓存和报告写到该工作目录
-backlog-atlas analyze --project owner/repo --dry-run
-backlog-atlas analyze --project https://gitlab.com/group/proj --format json > overview.json
+jev-triage analyze --project owner/repo --dry-run
+jev-triage analyze --project https://gitlab.com/group/proj --format json > overview.json
 
 # 内置 skill 可直接读取；--path 输出安装后的绝对路径
-backlog-atlas skill
-backlog-atlas skill --path
+jev-triage skill
+jev-triage skill --path
 ```
 
-[内置 skill](skills/backlog-atlas/SKILL.md) 是标准 Agent Skills 目录；技能提供流程与边界，CLI 执行取数、判定和生成报告，不需要常驻服务或 MCP。
+[内置 skill](skills/jev-triage/SKILL.md) 是标准 Agent Skills 目录；技能提供流程与边界，CLI 执行取数、判定和生成报告，不需要常驻服务或 MCP。
 
 Pi 用户可以从全局 npm 安装位置加载整个包（包内已声明 `pi.skills`），或仅本次会话加载 skill：
 
 ```bash
-pi install "$(npm root -g)/backlog-atlas"
+pi install "$(npm root -g)/jev-triage"
 # 或：不修改持久配置，只加载一次
-pi --skill "$(backlog-atlas skill --path)"
+pi --skill "$(jev-triage skill --path)"
 ```
 
-其他宿主可加载/链接该 `SKILL.md` 所在目录。若复制 skill，需要保留 README/CLI 的相对布局，或使用已在 PATH 的 `backlog-atlas` 并修正 README 链接。不会在安装时自动写入任何 agent 配置。
+其他宿主可加载/链接该 `SKILL.md` 所在目录。若复制 skill，需要保留 README/CLI 的相对布局，或使用已在 PATH 的 `jev-triage` 并修正 README 链接。不会在安装时自动写入任何 agent 配置。
 
 ## 使用（源码开发）
 

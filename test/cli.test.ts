@@ -14,7 +14,7 @@ const run = (cwd: string, ...args: string[]) => spawnSync(process.execPath, ["--
 });
 
 test("CLI metadata and bundled skill work outside the repo without loading .env", () => {
-  const dir = mkdtempSync(join(tmpdir(), "backlog-atlas-cli-"));
+  const dir = mkdtempSync(join(tmpdir(), "jev-triage-cli-"));
   try {
     writeFileSync(join(dir, ".env"), "TYPESAFE_API_KEY=not-used\n");
     const help = run(dir, "--help");
@@ -27,7 +27,7 @@ test("CLI metadata and bundled skill work outside the repo without loading .env"
     const skill = run(dir, "skill");
     assert.equal(skill.status, 0, skill.stderr);
     assert.equal(skill.stdout.trim(), readFileSync(path.stdout.trim(), "utf8").trim());
-    assert.match(skill.stdout, /name: backlog-atlas/);
+    assert.match(skill.stdout, /name: jev-triage/);
     const options = { forge: "gitlab", host: "git.example.com", project: "demo", state: "opened", withNotes: false, withLinks: true };
     const key = sha256(options).slice(0, 16);
     mkdirSync(join(dir, ".cache/issues"), { recursive: true });

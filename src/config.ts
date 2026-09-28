@@ -41,7 +41,7 @@ export function llmConfig(): LlmConfig {
   const headers = jsonEnv<Record<string, string>>("LLM_HEADERS", {});
   // opencode (zen / go) 要求每个会话带路由头
   if (new URL(baseURL).hostname.endsWith("opencode.ai") && !headers["x-opencode-session"]) {
-    headers["x-opencode-session"] = `backlog-atlas-${randomUUID()}`;
+    headers["x-opencode-session"] = `jev-triage-${randomUUID()}`;
   }
   return {
     baseURL,

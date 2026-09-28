@@ -30,14 +30,14 @@ import { renderDepsMarkdown, renderMarkdown, type DedupeReport, type DepsReport 
 import type { Issue, PreparedIssue } from "./types.js";
 import { log, mapPool } from "./util.js";
 
-const HELP = `backlog-atlas — GitHub / GitLab issue 分析（TypeSafe Jev）
+const HELP = `jev-triage — GitHub / GitLab issue 分析（TypeSafe Jev）
 
 用法:
-  backlog-atlas fetch   --project <ref> [选项]   拉取并缓存 issue
-  backlog-atlas dedupe  --project <ref> [选项]   只做去重
-  backlog-atlas analyze --project <ref> [选项]   去重 + 类型 + 依赖，输出 HTML / ASCII / JSON 总览
-  backlog-atlas skill [--path]                 输出内置 skill 正文或文件路径
-  backlog-atlas --version                      输出版本
+  jev-triage fetch   --project <ref> [选项]   拉取并缓存 issue
+  jev-triage dedupe  --project <ref> [选项]   只做去重
+  jev-triage analyze --project <ref> [选项]   去重 + 类型 + 依赖，输出 HTML / ASCII / JSON 总览
+  jev-triage skill [--path]                 输出内置 skill 正文或文件路径
+  jev-triage --version                      输出版本
 
 通用选项:
   --project <ref>         GitHub owner/repo、GitLab 项目 id / path，或直接粘贴项目/issue 列表的 URL（必填）
@@ -196,7 +196,7 @@ async function main() {
   }
   if (positionals.length !== 1) throw new Error("只接受一个子命令");
   if (cmd === "skill") {
-    const path = fileURLToPath(new URL("../skills/backlog-atlas/SKILL.md", import.meta.url));
+    const path = fileURLToPath(new URL("../skills/jev-triage/SKILL.md", import.meta.url));
     console.log(values.path ? path : await readFile(path, "utf8"));
     return;
   }

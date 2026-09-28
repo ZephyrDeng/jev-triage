@@ -1,8 +1,10 @@
 {
-  "name": "backlog-atlas",
+  "name": "jev-triage",
   "version": "0.1.0",
-  "description": "Map a GitHub or GitLab backlog: duplicates, related topics, issue types and dependency order, rendered as a single-file HTML report. Ships with an agent skill.",
+  "description": "Triage a GitHub or GitLab backlog with TypeSafe Jev: duplicates, related topics, issue types and dependency order in one HTML report. Ships with an agent skill.",
   "keywords": [
+    "jev",
+    "typesafe",
     "github",
     "gitlab",
     "issues",
@@ -15,13 +17,17 @@
   ],
   "license": "MIT",
   "author": "ZephyrDeng",
-  "homepage": "https://github.com/ZephyrDeng/backlog-atlas#readme",
+  "homepage": "https://github.com/ZephyrDeng/jev-triage#readme",
   "bugs": {
-    "url": "https://github.com/ZephyrDeng/backlog-atlas/issues"
+    "url": "https://github.com/ZephyrDeng/jev-triage/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZephyrDeng/backlog-atlas.git"
+    "url": "git+https://github.com/ZephyrDeng/jev-triage.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "type": "module",
   "files": [
@@ -37,7 +43,7 @@
     ]
   },
   "bin": {
-    "backlog-atlas": "./dist/cli.js"
+    "jev-triage": "./dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
