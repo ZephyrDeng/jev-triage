@@ -168,6 +168,22 @@ function sections(md: string): Map<string, string> {
   return out;
 }
 
+const NONE_RE = /^(?:不涉及|(?:none|n\/a|无|[—–-])(?=$|[\s。.,，;；—–|-]|[（(]))/i;
+const isTableRow = (l: string) => l.startsWith("|");
+const isTableSeparator = (l: string) => isTableRow(l) && /^[|\s:-]+$/.test(l) && l.includes("-");
+const tableCells = (l: string) => l.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()).filter(Boolean);
+
+/** 去掉行内 Markdown 标记并截短，用于把正文片段放进状态说明。 */
+export function plainText(s: string, max = 60): string {
+  const t = s
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|~~|`)/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
 const findSection = (s: Map<string, string>, re: RegExp) => [...s].find(([h]) => re.test(h))?.[1];
 
 function refs(text: string, prefix: string): number[] {
@@ -210,10 +226,24 @@ export function parseDeclared(issues: Issue[]): DeclaredStructure {
     const s = findSection(secs.get(i.iid)!, /^(blocked by|前置|依赖于|被阻塞)/);
     if (s === undefined) continue;
     const found: number[] = [];
-    const lines = s.split("\n").map((l) => l.replace(/^\s*[-*+]\s*/, "").trim()).filter(Boolean);
+    const rawLines = s.split("\n").map((l) => l.trim()).filter(Boolean);
+    const hasTable = rawLines.some(isTableRow);
+    const lines: { text: string; label: string }[] = [];
+    rawLines.forEach((l, k) => {
+      if (l.startsWith(">")) return;
+      if (!isTableRow(l)) {
+        const text = l.replace(/^[-*+]\s*/, "").trim();
+        const hasRef = refs(text, prefixOf(i)).length > 0;
+        if (!hasTable || hasRef) lines.push({ text, label: text });
+      } else if (!isTableSeparator(l) && !(rawLines[k + 1] && isTableSeparator(rawLines[k + 1]!))) {
+        const cells = tableCells(l);
+        if (cells.length) lines.push({ text: cells.join(" "), label: cells[0]! });
+      }
+    });
     if (!lines.length) unknown(i.iid, "Blocked by 为空，前置待确认");
-    for (const line of lines) {
-      if (/^(none|n\/a|无)(?=$|[\s。.,，;；—-])/i.test(line)) continue;
+    for (const { text: line, label } of lines) {
+      const claim = line.replace(/^[^：:]{1,12}[：:]\s*/, "");
+      if (NONE_RE.test(line) || NONE_RE.test(claim)) continue;
       const ids = refs(line, prefixOf(i));
       if (ids.length) found.push(...ids);
       else if (/^T?\d{1,3}(?:\s*[,，、]\s*T?\d{1,3})*$/i.test(line) && parentOf.has(i.iid)) {
@@ -222,7 +252,7 @@ export function parseDeclared(issues: Issue[]): DeclaredStructure {
           if (matches.length === 1) found.push(matches[0]!.iid);
           else unknown(i.iid, `同父任务序号 ${seq} 无法唯一解析`);
         }
-      } else unknown(i.iid, `前置待确认：${line}`);
+      } else unknown(i.iid, `前置待确认：${plainText(label)}`);
       // 同一行中同时出现本项目与外项目 URL 时，保留外部前置的不确定性。
       for (const u of line.matchAll(/https?:\/\/[^\s)<>]+?(?:\/-)?\/issues\/\d+/g)) {
         if (projectUrlOf(u[0]) !== prefixOf(i)) unknown(i.iid, `外项目前置：${u[0]}`);

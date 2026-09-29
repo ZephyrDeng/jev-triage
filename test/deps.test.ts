@@ -126,6 +126,16 @@ test("analyzeGraph.reduced drops transitive edges but preserves reachability thr
   }
 });
 
+test("parseDeclared: Blocked by markdown tables and prose do not leak raw markdown into unresolved", () => {
+  const none = "| 前置需求 | 关系 | 状态 |\n| --- | --- | --- |\n| 不涉及 | — | — |\n\n上游依赖：无（以 `origin/master` 为基线）。\n\n跨项目发布顺序：建议 `bff` 先行。\n";
+  const d = parseDeclared([
+    issue(1, `## Blocked by\n\n${none}`),
+    issue(2, "## Blocked by\n\n| 前置需求 | 关系 |\n| --- | --- |\n| #1 | 阻塞 |\n| 支付网关 **升级** | 待定 |\n"),
+  ]);
+  assert.deepEqual([...d.blockedBy], [[1, []], [2, [1]]]);
+  assert.deepEqual([...d.unresolved], [[2, ["前置待确认：支付网关 升级"]]]);
+});
+
 test("parseDeclared keeps out-of-scope, mixed, empty and ambiguous prerequisites unresolved", () => {
   const d = parseDeclared([
     issue(1, "## Parent\n#100\n## Blocked by\n- #9\n- 02, 03\n- #2"),
