@@ -1,4 +1,4 @@
-import { TYPE_NAME, TYPE_TAG, type IssueType } from "./classify.js";
+import { DEFAULT_TYPE_MIN_CONF, needsTypeReview, topCandidates, TYPE_NAME, TYPE_TAG, type IssueType } from "./classify.js";
 import type { OverviewInput } from "./ascii.js";
 import { analyzeGraph, executionBlockers, type DeclaredStructure, type DepEdge } from "./deps.js";
 
@@ -116,7 +116,7 @@ function buildEpics(o: HtmlInput): { epics: Epic[]; crossEdges: DepEdge[]; place
 }
 
 export function renderHtml(o: HtmlInput): string {
-  const lowConf = o.typeConfidence ?? 0.5;
+  const lowConf = o.typeConfidence ?? DEFAULT_TYPE_MIN_CONF;
   const maybeDup = o.maybeDup ?? 0.3;
   const coversMin = o.covers ?? 0.6;
   const c = (n: number) => o.canonicalOf.get(n) ?? n;
@@ -127,7 +127,7 @@ export function renderHtml(o: HtmlInput): string {
 
   const typeChip = (n: number) => {
     const t = o.types.get(n);
-    const unsure = t && t.confidence < lowConf;
+    const unsure = t && needsTypeReview(t, lowConf);
     return `<span class="type" data-t="${typeOf(n)}" title="${esc(TYPE_NAME[typeOf(n)])}${t ? ` · 置信度 ${pct(t.confidence)}` : ""}">${TYPE_TAG[typeOf(n)]}${unsure ? `<i>?</i>` : ""}</span>`;
   };
   const ref = (n: number) =>
@@ -206,6 +206,19 @@ export function renderHtml(o: HtmlInput): string {
     }),
   ];
 
+  // ---- 类型待确认 ----
+  const typeReviewIds = [...o.issues.keys()].filter((n) => !o.canonicalOf.has(n) && o.types.get(n) && needsTypeReview(o.types.get(n)!, lowConf));
+  const typeReviewHtml = typeReviewIds
+    .map((n) => {
+      const t = o.types.get(n)!;
+      return `<li class="review" data-q="${search(n)}">
+      <div class="review-kind">类型待确认</div>
+      <div class="review-pair">${ref(n)}</div>
+      <div class="review-p">${bar(topCandidates(t).map(({ type, probability }, i) => [`${TYPE_NAME[type]}`, probability, i === 0 ? "hi" : "mid"] as [string, number, string]))}</div>
+    </li>`;
+    })
+    .join("");
+
   // ---- 可合并 / 相关主题 ----
   const mergeHtml = o.groups
     .map((g) => {
@@ -254,7 +267,7 @@ export function renderHtml(o: HtmlInput): string {
       .map((n) => {
         const raw = o.issues.get(n)!.raw;
         return `<tr data-q="${search(n)}" data-t="${t}"><td class="iid"><a href="${safeUrl(url(n))}" target="_blank" rel="noopener">#${n}</a></td><td><a class="row-title" href="${safeUrl(url(n))}" target="_blank" rel="noopener">${esc(title(n))}</a>${
-          o.types.get(n) && o.types.get(n)!.confidence < lowConf ? `<span class="unsure" title="类型置信度 ${pct(o.types.get(n)!.confidence)}">类型待定</span>` : ""
+          o.types.get(n) && needsTypeReview(o.types.get(n)!, lowConf) ? `<span class="unsure" title="类型置信度 ${pct(o.types.get(n)!.confidence)}">类型待定</span>` : ""
         }</td><td class="date">${esc((raw.updatedAt || "").slice(0, 10))}</td></tr>`;
       })
       .join("")}</tbody>`;
@@ -272,6 +285,7 @@ export function renderHtml(o: HtmlInput): string {
   const nav = [
     ["plan", "执行计划", epics.length],
     ["review", "待确认", reviewRows.length],
+    ["type-review", "类型待确认", typeReviewIds.length],
     ["merge", "可合并", o.groups.length],
     ["related", "相关主题", related.length],
     ["rest", "独立 issue", restIds.length],
@@ -306,7 +320,7 @@ export function renderHtml(o: HtmlInput): string {
     </div>
     <label class="search"><span class="sr">搜索</span><input id="q" type="search" placeholder="搜索标题或 #编号" autocomplete="off"><kbd>/</kbd></label>
   </div>
-  <nav class="tabs">${nav.filter((x) => !empties.includes(x)).map(([id, label, n]) => `<a href="#${id}">${label}<span>${n}</span></a>`).join("")}</nav>
+  <nav class="tabs">${nav.filter((x) => !empties.includes(x) && (x[0] !== "type-review" || x[2])).map(([id, label, n]) => `<a href="#${id}">${label}<span>${n}</span></a>`).join("")}</nav>
 </header>
 
 <main>
@@ -327,6 +341,10 @@ export function renderHtml(o: HtmlInput): string {
   ${reviewRows.length ? `<section id="review" class="block">
     <div class="block-head"><h2>待确认</h2><p>模型拿不准的判断。条形图展示各结论的概率分布。</p></div>
     <ul class="reviews">${reviewRows.join("")}</ul>
+  </section>` : ""}
+  ${typeReviewHtml ? `<section id="type-review" class="block">
+    <div class="block-head"><h2>类型待确认</h2><p>类型置信度低于 ${pct(lowConf)}，条形图为概率最高的两个候选类型。</p></div>
+    <ul class="reviews">${typeReviewHtml}</ul>
   </section>` : ""}
   ${mergeHtml || relatedHtml ? `<div class="pair-blocks">
     ${mergeHtml ? `<section id="merge" class="block">

@@ -47,6 +47,8 @@ test("CLI metadata and bundled skill work outside the repo without loading .env"
       ["analyze", "--project", "1", "--concurrency", "NaN"],
       ["analyze", "--project", "1", "--limit", "0"],
       ["analyze", "--project", "1", "--dep-threshold", "2"],
+      ["analyze", "--project", "1", "--type-min-conf", "1.5"],
+      ["analyze", "--project", "1", "--type-min-conf", ""],
       ["analyze", "--project", "1", "--format", "xml"],
       ["analyze", "--project", "1", "extra"],
       ["analyze", "--project", "1", "--forge", "bitbucket"],

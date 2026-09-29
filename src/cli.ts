@@ -7,7 +7,7 @@ import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { renderOverview } from "./ascii.js";
 import { renderHtml } from "./html.js";
 import { allPairs, recallCandidates, type CandidatePair, type Doc } from "./candidates.js";
-import { IssueClassifier, type IssueClassification } from "./classify.js";
+import { DEFAULT_TYPE_MIN_CONF, IssueClassifier, needsTypeReview, type IssueClassification } from "./classify.js";
 import { defaultHost, loadEnv } from "./config.js";
 import { clusterDuplicates, clusterRelated, DedupeJudge, type DuplicateGroup, type PairJudgment } from "./dedupe.js";
 import {
@@ -63,6 +63,7 @@ const HELP = `jev-triage — GitHub / GitLab issue 分析（TypeSafe Jev）
   --dep-min-sim <x>       依赖候选：最低相似度（默认 0.05，比去重宽松）
   --dep-threshold <p>     P(方向) ≥ p 判为依赖（默认 0.6）
   --dep-review <p>        P(方向) ≥ p 但未达阈值时待确认（默认 0.3）
+  --type-min-conf <p>     类型置信度 < p 时标记「类型待确认」并展示 top-2 候选（默认 0.5，0 表示不标记）
   --concurrency <n>       并发请求数（默认 6）
   --translate             先用 LLM 把 issue 翻译成英文再交给 Jev（默认直接用原文）
   --dry-run               只做清洗/候选召回（及翻译），不调用 Jev
@@ -97,6 +98,7 @@ function parse() {
       "dep-min-sim": { type: "string", default: "0.05" },
       "dep-threshold": { type: "string", default: "0.6" },
       "dep-review": { type: "string", default: "0.3" },
+      "type-min-conf": { type: "string", default: String(DEFAULT_TYPE_MIN_CONF) },
       concurrency: { type: "string", default: "6" },
       translate: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
@@ -183,98 +185,9 @@ async function runDedupe(values: Values, p: Prepared, client: TypeSafeClient) {
   return { judgments, groups, review };
 }
 
-async function main() {
-  const { positionals, values } = parse();
-  const cmd = positionals[0];
-  if (values.version) {
-    console.log(JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version);
-    return;
-  }
-  if (values.help || !cmd) {
-    console.log(HELP);
-    process.exit(values.help ? 0 : 1);
-  }
-  if (positionals.length !== 1) throw new Error("只接受一个子命令");
-  if (cmd === "skill") {
-    const path = fileURLToPath(new URL("../skills/jev-triage/SKILL.md", import.meta.url));
-    console.log(values.path ? path : await readFile(path, "utf8"));
-    return;
-  }
-  if (!["fetch", "dedupe", "analyze"].includes(cmd)) throw new Error(`未知子命令：${cmd}`);
-  if (values.path) throw new Error("--path 仅用于 skill");
-  if (!values.project?.trim()) throw new Error("缺少 --project");
-  if (!["html", "ascii", "json"].includes(values.format)) throw new Error("--format 应为 html、ascii 或 json");
-  for (const key of ["limit", "concurrency", "max-chars", "top-k", "dep-top-k", "all-pairs-max"] as const) {
-    const raw = values[key];
-    if (raw === undefined) continue;
-    const n = Number(raw);
-    if (!Number.isSafeInteger(n) || n < (key === "all-pairs-max" ? 0 : 1)) throw new Error(`--${key} 必须为${key === "all-pairs-max" ? "非负" : "正"}整数`);
-  }
-  for (const key of ["min-sim", "dep-min-sim", "dup-threshold", "distinct-threshold", "related-threshold", "dep-threshold", "dep-review"] as const) {
-    const n = Number(values[key]);
-    if (!values[key].trim() || !Number.isFinite(n) || n < 0 || n > 1) throw new Error(`--${key} 必须在 0–1 之间`);
-  }
-  loadEnv();
-
-  if (cmd === "fetch") {
-    const p = await prepare({ ...values, translate: false }, false);
-    for (const i of p.issues) console.log(`#${i.iid}\t${i.title}`);
-    return;
-  }
-
-  const p = await prepare(values, cmd === "analyze");
-  log(
-    p.exhaustive
-      ? `候选对 ${p.pairs.length} 个（issue 较少，全量两两比较）`
-      : `候选对 ${p.pairs.length} 个（${p.issues.length} 条 issue，全量两两比较为 ${(p.issues.length * (p.issues.length - 1)) / 2}，已召回缩减）`,
-  );
-  if (values["dry-run"]) {
-    for (const pair of p.pairs.slice(0, 50)) {
-      console.log(`${pair.similarity.toFixed(3)}\t#${pair.a} ${p.byId.get(pair.a)?.title}\n\t#${pair.b} ${p.byId.get(pair.b)?.title}`);
-    }
-    if (p.pairs.length > 50) console.log(`... 其余 ${p.pairs.length - 50} 个`);
-    return;
-  }
-
-  const client = new TypeSafeClient({ timeout: 30_000 });
-  await mkdir(values.out, { recursive: true });
-
-  // ---- 去重 ----
-  const dd = await runDedupe(values, p, client);
-  const dedupeReport: DedupeReport = {
-    project: p.project,
-    generatedAt: new Date().toISOString(),
-    model: dd.judgments[0]?.model ?? null,
-    issueCount: p.issues.length,
-    candidatePairs: dd.judgments.length,
-    stats: {
-      duplicate: dd.judgments.filter((j) => j.verdict === "duplicate").length,
-      review: dd.review.length,
-      distinct: dd.judgments.filter((j) => j.verdict === "distinct").length,
-      inputTokens: dd.judgments.filter((j) => !j.cached).reduce((s, j) => s + j.inputTokens, 0),
-      apiCalls: dd.judgments.filter((j) => !j.cached).length,
-    },
-    groups: dd.groups,
-    review: dd.review,
-    judgments: dd.judgments,
-  };
-  const dBase = outBase(values, "dedupe");
-  await writeFile(`${dBase}.json`, JSON.stringify(dedupeReport, null, 2));
-  await writeFile(`${dBase}.md`, renderMarkdown(dedupeReport, p.byId));
-  log(`去重：重复组 ${dd.groups.length}，待确认 ${dd.review.length}  → ${dBase}.md`);
-  if (cmd === "dedupe") return;
-
-  // ---- 类型 ----
-  const classifier = new IssueClassifier(client, jevModel(), join(CACHE_DIR, "jev", "classify"));
-  const classes: IssueClassification[] = await mapPool([...p.byId.values()], Number(values.concurrency), (i) =>
-    classifier.classify(i),
-  );
-  const types = new Map(classes.map((c) => [c.iid, c]));
-  log(`类型：已分类 ${classes.length} 条`);
-
-  // ---- 依赖 ----
+async function runDeps(values: Values, p: Prepared, client: TypeSafeClient, groups: DuplicateGroup[]) {
   const canonicalOf = new Map<number, number>();
-  for (const g of dd.groups) for (const m of g.members) if (m !== g.canonical) canonicalOf.set(m, g.canonical);
+  for (const g of groups) for (const m of g.members) if (m !== g.canonical) canonicalOf.set(m, g.canonical);
   const declared = parseDeclared(p.issues);
   const factEdges = [...linkEdges(p.issues), ...declaredEdges(declared)];
   const factPairs = new Set(factEdges.map((e) => `${Math.min(e.from, e.to)}-${Math.max(e.from, e.to)}`));
@@ -344,8 +257,20 @@ async function main() {
   const depBase = outBase(values, "deps");
   await writeFile(`${depBase}.json`, JSON.stringify(depsReport, null, 2));
   await writeFile(`${depBase}.md`, renderDepsMarkdown(depsReport, p.byId));
+  return { declared, canonicalOf, graph, depReview, depsReport, base: depBase };
+}
 
-  // ---- 总览 ----
+interface OverviewParts {
+  dd: Awaited<ReturnType<typeof runDedupe>>;
+  dedupeReport: DedupeReport;
+  deps: Awaited<ReturnType<typeof runDeps>>;
+  classes: IssueClassification[];
+  types: Map<number, IssueClassification>;
+  typeMin: number;
+}
+
+async function writeOverview(values: Values, p: Prepared, { dd, dedupeReport, deps, classes, types, typeMin }: OverviewParts) {
+  const { declared, canonicalOf, graph, depReview, depsReport } = deps;
   const overviewInput = {
     project: p.project,
     issues: p.byId,
@@ -357,6 +282,7 @@ async function main() {
     related: clusterRelated(dd.judgments, canonicalOf, Number(values["related-threshold"])),
     dupReview: dd.review,
     depReview,
+    typeConfidence: typeMin,
   };
   // 文件：完整宽度、展示全部待确认；终端：按窗口宽度截断，避免折行错位
   const asciiFile = renderOverview({ ...overviewInput, titleWidth: 80, maxReview: Number.POSITIVE_INFINITY });
@@ -366,12 +292,12 @@ async function main() {
     maxWidth: cols ? cols - 1 : undefined,
     titleWidth: cols ? Math.max(24, Math.min(80, cols - 46)) : 56,
   });
-  const aBase = outBase(values, "overview");
-  await writeFile(`${aBase}.txt`, asciiFile + "\n");
+  const base = outBase(values, "overview");
+  await writeFile(`${base}.txt`, asciiFile + "\n");
   const webUrl = p.issues[0]?.webUrl;
   const projectUrl = webUrl && projectUrlOf(webUrl);
   await writeFile(
-    `${aBase}.html`,
+    `${base}.html`,
     renderHtml({
       ...overviewInput,
       project: projectUrl ? new URL(projectUrl).pathname.slice(1) : p.project,
@@ -381,22 +307,118 @@ async function main() {
       model: dedupeReport.model ?? depsReport.model,
     }),
   );
-  const overviewJson = JSON.stringify({
+  const json = JSON.stringify({
     project: p.project, generatedAt: new Date().toISOString(),
     issues: [...p.byId.values()].map((i) => ({ iid: i.iid, title: i.originalTitle, webUrl: i.webUrl, state: i.raw.state })),
-    types: classes, groups: dd.groups, graph, related: overviewInput.related,
+    types: classes.map((c) => ({ ...c, needsReview: needsTypeReview(c, typeMin) })), groups: dd.groups, graph, related: overviewInput.related,
     dupReview: dd.review, depReview,
     parentOf: Object.fromEntries(declared.parentOf), blockedBy: Object.fromEntries(declared.blockedBy),
     unresolved: Object.fromEntries(declared.unresolved),
   }, null, 2);
-  await writeFile(`${aBase}.json`, overviewJson);
+  await writeFile(`${base}.json`, json);
   const tokens =
     dedupeReport.stats.inputTokens +
     classes.filter((c) => !c.cached).reduce((s, c) => s + c.inputTokens, 0) +
     depsReport.stats.inputTokens;
-  log(`Jev 本次新消耗输入 ${tokens} tokens（约 $${((tokens / 1e6) * 0.042).toFixed(4)}）`);
-  log(`报告：${aBase}.html | ${aBase}.txt | ${depBase}.md | ${dBase}.md\n`);
-  console.log(values.format === "ascii" ? ascii : values.format === "json" ? overviewJson : resolve(`${aBase}.html`));
+  return { base, ascii, json, tokens };
+}
+
+async function main() {
+  const { positionals, values } = parse();
+  const cmd = positionals[0];
+  if (values.version) {
+    console.log(JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version);
+    return;
+  }
+  if (values.help || !cmd) {
+    console.log(HELP);
+    process.exit(values.help ? 0 : 1);
+  }
+  if (positionals.length !== 1) throw new Error("只接受一个子命令");
+  if (cmd === "skill") {
+    const path = fileURLToPath(new URL("../skills/jev-triage/SKILL.md", import.meta.url));
+    console.log(values.path ? path : await readFile(path, "utf8"));
+    return;
+  }
+  if (!["fetch", "dedupe", "analyze"].includes(cmd)) throw new Error(`未知子命令：${cmd}`);
+  if (values.path) throw new Error("--path 仅用于 skill");
+  if (!values.project?.trim()) throw new Error("缺少 --project");
+  if (!["html", "ascii", "json"].includes(values.format)) throw new Error("--format 应为 html、ascii 或 json");
+  for (const key of ["limit", "concurrency", "max-chars", "top-k", "dep-top-k", "all-pairs-max"] as const) {
+    const raw = values[key];
+    if (raw === undefined) continue;
+    const n = Number(raw);
+    if (!Number.isSafeInteger(n) || n < (key === "all-pairs-max" ? 0 : 1)) throw new Error(`--${key} 必须为${key === "all-pairs-max" ? "非负" : "正"}整数`);
+  }
+  for (const key of ["min-sim", "dep-min-sim", "dup-threshold", "distinct-threshold", "related-threshold", "dep-threshold", "dep-review", "type-min-conf"] as const) {
+    const n = Number(values[key]);
+    if (!values[key].trim() || !Number.isFinite(n) || n < 0 || n > 1) throw new Error(`--${key} 必须在 0–1 之间`);
+  }
+  loadEnv();
+
+  if (cmd === "fetch") {
+    const p = await prepare({ ...values, translate: false }, false);
+    for (const i of p.issues) console.log(`#${i.iid}\t${i.title}`);
+    return;
+  }
+
+  const p = await prepare(values, cmd === "analyze");
+  log(
+    p.exhaustive
+      ? `候选对 ${p.pairs.length} 个（issue 较少，全量两两比较）`
+      : `候选对 ${p.pairs.length} 个（${p.issues.length} 条 issue，全量两两比较为 ${(p.issues.length * (p.issues.length - 1)) / 2}，已召回缩减）`,
+  );
+  if (values["dry-run"]) {
+    for (const pair of p.pairs.slice(0, 50)) {
+      console.log(`${pair.similarity.toFixed(3)}\t#${pair.a} ${p.byId.get(pair.a)?.title}\n\t#${pair.b} ${p.byId.get(pair.b)?.title}`);
+    }
+    if (p.pairs.length > 50) console.log(`... 其余 ${p.pairs.length - 50} 个`);
+    return;
+  }
+
+  const client = new TypeSafeClient({ timeout: 30_000 });
+  await mkdir(values.out, { recursive: true });
+
+  // ---- 去重 ----
+  const dd = await runDedupe(values, p, client);
+  const dedupeReport: DedupeReport = {
+    project: p.project,
+    generatedAt: new Date().toISOString(),
+    model: dd.judgments[0]?.model ?? null,
+    issueCount: p.issues.length,
+    candidatePairs: dd.judgments.length,
+    stats: {
+      duplicate: dd.judgments.filter((j) => j.verdict === "duplicate").length,
+      review: dd.review.length,
+      distinct: dd.judgments.filter((j) => j.verdict === "distinct").length,
+      inputTokens: dd.judgments.filter((j) => !j.cached).reduce((s, j) => s + j.inputTokens, 0),
+      apiCalls: dd.judgments.filter((j) => !j.cached).length,
+    },
+    groups: dd.groups,
+    review: dd.review,
+    judgments: dd.judgments,
+  };
+  const dBase = outBase(values, "dedupe");
+  await writeFile(`${dBase}.json`, JSON.stringify(dedupeReport, null, 2));
+  await writeFile(`${dBase}.md`, renderMarkdown(dedupeReport, p.byId));
+  log(`去重：重复组 ${dd.groups.length}，待确认 ${dd.review.length}  → ${dBase}.md`);
+  if (cmd === "dedupe") return;
+
+  // ---- 类型 ----
+  const typeMin = Number(values["type-min-conf"]);
+  const classifier = new IssueClassifier(client, jevModel(), join(CACHE_DIR, "jev", "classify"));
+  const classes: IssueClassification[] = await mapPool([...p.byId.values()], Number(values.concurrency), (i) =>
+    classifier.classify(i),
+  );
+  const types = new Map(classes.map((c) => [c.iid, c]));
+  log(`类型：已分类 ${classes.length} 条，待确认 ${classes.filter((c) => needsTypeReview(c, typeMin)).length} 条`);
+
+  // ---- 依赖 ----
+  const deps = await runDeps(values, p, client, dd.groups);
+  const out = await writeOverview(values, p, { dd, dedupeReport, deps, classes, types, typeMin });
+  log(`Jev 本次新消耗输入 ${out.tokens} tokens（约 $${((out.tokens / 1e6) * 0.042).toFixed(4)}）`);
+  log(`报告：${out.base}.html | ${out.base}.txt | ${deps.base}.md | ${dBase}.md\n`);
+  console.log(values.format === "ascii" ? out.ascii : values.format === "json" ? out.json : resolve(`${out.base}.html`));
 }
 
 main().catch((err) => {

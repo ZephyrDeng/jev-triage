@@ -49,6 +49,22 @@ export interface IssueClassification {
   cached: boolean;
 }
 
+/** 类型置信度默认门槛；低于它的 issue 进入"类型待确认"。0 表示不标记。 */
+export const DEFAULT_TYPE_MIN_CONF = 0.5;
+
+export function needsTypeReview(c: Pick<IssueClassification, "confidence">, min: number): boolean {
+  return min > 0 && c.confidence < min;
+}
+
+/** 概率最高的前 n 个候选类型；同概率按 TYPE_CRITERIA 的声明顺序。 */
+export function topCandidates(c: Pick<IssueClassification, "probabilities">, n = 2): { type: IssueType; probability: number }[] {
+  const order = Object.keys(TYPE_CRITERIA) as IssueType[];
+  return order
+    .map((type) => ({ type, probability: c.probabilities[type] ?? 0 }))
+    .sort((x, y) => y.probability - x.probability || order.indexOf(x.type) - order.indexOf(y.type))
+    .slice(0, n);
+}
+
 interface Cached {
   type: IssueType;
   confidence: number;

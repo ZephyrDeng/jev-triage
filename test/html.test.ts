@@ -66,3 +66,28 @@ test("HTML handles empty scopes and closed prerequisites", () => {
   assert.doesNotMatch(node(html, 3), /node ready/);
   assert.match(html, /范围内 issue/);
 });
+
+const withTypes = (o: HtmlInput, confs: [number, number][]) => {
+  for (const [iid, confidence] of confs) {
+    o.types.set(iid, {
+      iid, type: "feature", confidence, inputTokens: 0, cached: false,
+      probabilities: { bug: 0.1, feature: confidence, tech_debt: 0.4, tooling: 0, question: 0, other: 0 },
+    });
+  }
+  return o;
+};
+
+test("low-confidence types get a review block in HTML and ASCII, threshold 0 disables it", () => {
+  const o = withTypes(input([issue(1), issue(2), issue(3)], []), [[1, 0.3], [2, 0.5], [3, 0.9]]);
+  const html = renderHtml(o);
+  assert.match(html, /id="type-review"/);
+  assert.equal((html.match(/类型待确认<\/div>/g) ?? []).length, 1);
+  const ascii = renderOverview(o);
+  assert.match(ascii, /■ 类型待确认（1，置信度 < 50%）/);
+  assert.match(ascii, /候选：TECH 技术优化 40% \/ FEAT 需求 30%/);
+  o.typeConfidence = 0.95;
+  assert.match(renderOverview(o), /■ 类型待确认（3，/);
+  o.typeConfidence = 0;
+  assert.doesNotMatch(renderHtml(o), /id="type-review"/);
+  assert.doesNotMatch(renderOverview(o), /类型待确认|\? = 类型置信度/);
+});

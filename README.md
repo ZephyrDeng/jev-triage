@@ -117,7 +117,7 @@ npm run dev -- dedupe --project owner/repo --ignore-label '^release:'
 
 API key 使用环境变量或工作目录 `.env`；`TYPESAFE_ENV_FILE` 可指定备用 env 文件（默认 `~/.config/ego-jev/secrets.env`）。报告和缓存包含项目数据，私有项目的报告不要公开上传。
 
-CLI 只读，不会自动关闭、合并或修改 issue。模型分类置信度与阈值仍需校准，依赖分层不是业务优先级排序。
+CLI 只读，不会自动关闭、合并或修改 issue。类型置信度低于 `--type-min-conf`（默认 0.5，0 表示不标记）的 issue 会列入「类型待确认」并展示 top-2 候选，JSON 中为 `types[].needsReview`。模型分类置信度与阈值仍需校准，依赖分层不是业务优先级排序。
 
 ## 开发
 

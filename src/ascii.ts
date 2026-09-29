@@ -1,4 +1,4 @@
-import { TYPE_NAME, TYPE_TAG, type IssueClassification, type IssueType } from "./classify.js";
+import { DEFAULT_TYPE_MIN_CONF, needsTypeReview, topCandidates, TYPE_NAME, TYPE_TAG, type IssueClassification, type IssueType } from "./classify.js";
 import type { DuplicateGroup, PairJudgment, RelatedGroup } from "./dedupe.js";
 import { executionBlockers, type DeclaredStructure, type DepGraph, type DepJudgment } from "./deps.js";
 import type { PreparedIssue } from "./types.js";
@@ -21,7 +21,7 @@ export interface OverviewInput {
   maybeDup?: number;
   /** 标注"包含"关系的最低概率。 */
   covers?: number;
-  /** 类型置信度低于该值时标记 "?"。 */
+  /** 类型置信度低于该值时标记 "?" 并列入「类型待确认」；0 表示不标记。默认 0.5。 */
   typeConfidence?: number;
   titleWidth?: number;
   /** 终端输出时的最大行宽（按保守宽度截断每一行）；不传则不截断。 */
@@ -66,14 +66,14 @@ export function renderOverview(o: OverviewInput): string {
   const maybeDup = o.maybeDup ?? 0.3;
   const coversMin = o.covers ?? 0.6;
   const dupReview = o.dupReview.filter((j) => j.relation.probabilities[2] >= maybeDup);
-  const lowConf = o.typeConfidence ?? 0.5;
+  const lowConf = o.typeConfidence ?? DEFAULT_TYPE_MIN_CONF;
   const mergedInto = new Map<number, number[]>();
   for (const g of o.groups) mergedInto.set(g.canonical, g.members.filter((m) => m !== g.canonical));
 
   const tag = (iid: number) => {
     const t = o.types.get(iid);
     if (!t) return "[?]";
-    return `[${TYPE_TAG[t.type]}${t.confidence < lowConf ? "?" : ""}]`;
+    return `[${TYPE_TAG[t.type]}${needsTypeReview(t, lowConf) ? "?" : ""}]`;
   };
   const title = (iid: number) => truncate(o.issues.get(iid)?.originalTitle ?? "", titleWidth);
   const label = (iid: number, withMerged = true) => {
@@ -89,11 +89,11 @@ export function renderOverview(o: OverviewInput): string {
   L.push(
     `${o.issues.size} 条 · 可合并 ${o.groups.length} 组（${o.groups.reduce((s, g) => s + g.members.length - 1, 0)} 条可关闭）· 依赖 ${o.graph.edges.length} 条`,
   );
-  L.push(`相关主题 ${o.related.length} · 循环 ${o.graph.cycles.length} · 待确认 ${dupReview.length + o.depReview.length}`);
+  L.push(`相关主题 ${o.related.length} · 循环 ${o.graph.cycles.length} · 待确认 ${dupReview.length + o.depReview.length}${lowConf > 0 ? ` · 类型待确认 ${[...o.types].filter(([iid, t]) => !o.canonicalOf.has(iid) && needsTypeReview(t, lowConf)).length}` : ""}`);
   const present = (Object.keys(TYPE_TAG) as IssueType[]).filter((t) => typeCounts.get(t));
   L.push("类型：" + present.map((t) => `${TYPE_TAG[t]} ${typeCounts.get(t)}`).join(" · "));
   L.push("图例：" + present.map((t) => `${TYPE_TAG[t]}=${TYPE_NAME[t]}`).join(" "));
-  L.push(`      ? = 类型置信度 < ${pct(lowConf)}`);
+  if (lowConf > 0) L.push(`      ? = 类型置信度 < ${pct(lowConf)}`);
   L.push("");
 
   // 1. 合并
@@ -184,6 +184,17 @@ export function renderOverview(o: OverviewInput): string {
     const maxReview = o.maxReview ?? 10;
     for (const it of items.slice(0, maxReview)) L.push(...it);
     if (items.length > maxReview) L.push(`  …… 其余 ${items.length - maxReview} 条见 deps / dedupe 明细报告`);
+    L.push("");
+  }
+
+  // 5b. 类型待确认
+  const typeReview = [...o.issues.keys()].filter((iid) => !o.canonicalOf.has(iid) && needsTypeReview(o.types.get(iid) ?? { confidence: 1 }, lowConf));
+  if (typeReview.length) {
+    L.push(`■ 类型待确认（${typeReview.length}，置信度 < ${pct(lowConf)}）`);
+    for (const iid of typeReview) {
+      const t = o.types.get(iid)!;
+      L.push(`  ${label(iid)}`, `      候选：${topCandidates(t).map((x) => `${TYPE_TAG[x.type]} ${TYPE_NAME[x.type]} ${pct(x.probability)}`).join(" / ")}`);
+    }
     L.push("");
   }
 
