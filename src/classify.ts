@@ -1,5 +1,6 @@
 import { choice, TypeSafeClient } from "@typesafe-ai/sdk";
 import { issueState } from "./dedupe.js";
+import { imageKeys, imageRefs } from "./images.js";
 import type { PreparedIssue } from "./types.js";
 import { DiskCache, sha256 } from "./util.js";
 
@@ -84,15 +85,20 @@ export class IssueClassifier {
   }
 
   async classify(issue: PreparedIssue): Promise<IssueClassification> {
-    const state = { issue: issueState(issue) };
-    const key = sha256({ v: 1, model: this.model, state, questions: QUESTIONS });
+    const state = { issue: { ...issueState(issue), ...imageRefs(issue) } };
+    const key = sha256({
+      v: 1,
+      model: this.model,
+      state: { issue: { ...issueState(issue), ...imageKeys(issue) } },
+      questions: QUESTIONS,
+    });
     const { value, hit } = await this.cache.wrap<Cached>(key, async () => {
       const res = await this.client.systemOne({ model: this.model, state, questions: QUESTIONS });
       return {
         type: res.answers.type.choice,
         confidence: res.answers.type.confidence,
         probabilities: { ...res.answers.type.probabilities },
-        inputTokens: res.usage.input_tokens,
+        inputTokens: res.usage.input_tokens ?? 0,
       };
     });
     return { iid: issue.iid, ...value, cached: hit };

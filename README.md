@@ -8,7 +8,7 @@ jev-triage analyze --project owner/repo --dry-run        # recall only, no model
 jev-triage analyze --project https://gitlab.com/group/proj # full analysis → out/overview-*.html
 ```
 
-Requires Node.js ≥ 20.12, `gh` or `glab` logged in to the target host, and `TYPESAFE_API_KEY` for model analysis. CLI output and reports are currently in Chinese.
+Requires Node.js ≥ 22, `gh` or `glab` logged in to the target host, and `TYPESAFE_API_KEY` for model analysis. `--images` also passes issue screenshots (up to 4 per issue) to Jev; image reading is a preview feature behind a per-request header. CLI output and reports are currently in Chinese.
 
 Independent community project, not affiliated with or endorsed by TypeSafe. "Jev" refers to TypeSafe's model, which this tool calls through the official SDK.
 
@@ -64,11 +64,13 @@ gh / glab 拉取 ──► 确定性清洗 ──►（可选）LLM 翻译 ─�
 | GitHub / GHES | `gh api` | `owner/repo`、`https://github.com/owner/repo/issues` | issue dependencies（blocked by / blocking），未开启时视为无 |
 | GitLab | `glab api` | 项目 id、`group/sub/proj`、`https://gitlab.com/group/proj/-/issues` | issue links（blocks / is_blocked_by / relates_to） |
 
+`--images`：把 issue 中的截图交给 Jev 看图（Markdown / HTML 图片，每条 issue 最多 4 张）。GitLab 的 `/uploads/` 与 GitHub 的 `user-attachments` 经 `glab` / `gh` API 带登录态下载，其他 https 图片匿名直连；下载失败的图按文字占位处理，图片文件缓存到 `.cache/images`。Jev 读图目前是预览功能（请求自动带 `TypeSafe-Danger-Zone-Images: true`），会明显增加输入 token。
+
 URL 与 `git@host:…` 中的主机优先；裸路径使用 `--host`（默认 `$FORGE_HOST` 或 `github.com`）。平台按 `--forge`、`$FORGE`、主机名是否含 `github` 的顺序判断，主机名不含 github 的 GitHub Enterprise 需加 `--forge github`。GitHub 的 issue 列表接口会返回 PR，CLI 只保留 issue；机器人评论不计入 `--with-notes`。
 
 ## 安装 CLI 与内置 skill
 
-要求 Node.js ≥20.12，以及已登录目标主机的 `gh`（GitHub）或 `glab`（GitLab）。
+要求 Node.js ≥22，以及已登录目标主机的 `gh`（GitHub）或 `glab`（GitLab）。
 
 ```bash
 npm install -g @zephyrdeng/jev-triage

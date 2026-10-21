@@ -1,3 +1,5 @@
+import type { Image } from "@typesafe-ai/sdk";
+
 /** issue 中我们关心的字段（从 GitHub / GitLab REST API 映射而来）。 */
 export interface Issue {
   iid: number;
@@ -41,4 +43,8 @@ export interface PreparedIssue {
   labels: string[];
   translated: boolean;
   raw: Issue;
+  /** --images：图片占位符 refN 对应的原始 URL；与 images 一一对应。 */
+  imageUrls?: string[];
+  /** --images：下载并转换好的图片，按 imageUrls 顺序（下载失败的位置缺省）。 */
+  images?: Image[];
 }

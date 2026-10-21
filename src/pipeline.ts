@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { cleanMarkdown, truncateByParagraph } from "./clean.js";
 import { llmConfig } from "./config.js";
 import { fetchIssues, type FetchOptions } from "./forge.js";
+import { extractIssueImages, loadIssueImages } from "./images.js";
 import { needsTranslation, Translator } from "./translate.js";
 import type { Issue, PreparedIssue } from "./types.js";
 import { log, mapPool, sha256 } from "./util.js";
@@ -33,18 +34,22 @@ export interface PrepareOptions {
   ignoreLabels: RegExp[];
   concurrency: number;
   translate: boolean;
+  /** 设置后（--images）：正文中的图片改写为 refN 占位符，并按平台下载图片。 */
+  images?: FetchOptions;
 }
 
 /** 确定性清洗 → LLM 翻译成英文。 */
 export async function prepareIssues(issues: Issue[], opts: PrepareOptions): Promise<PreparedIssue[]> {
   const inputs = issues.map((issue) => {
-    let body = cleanMarkdown(issue.description, { maxChars: opts.maxChars });
+    const x = opts.images ? extractIssueImages(issue) : undefined;
+    let body = cleanMarkdown(x?.description ?? issue.description, { maxChars: opts.maxChars });
     if (issue.notes?.length) {
-      const notes = issue.notes.map((n) => `- ${cleanMarkdown(n, { maxChars: 600 })}`).join("\n");
-      body = truncateByParagraph(`${body}\n\n## Comments\n${notes}`, opts.maxChars + 1500);
+      const src = x?.notes ?? issue.notes;
+      const notes = src.filter((n) => n.trim()).map((n) => `- ${cleanMarkdown(n, { maxChars: 600 })}`).join("\n");
+      if (notes) body = truncateByParagraph(`${body}\n\n## Comments\n${notes}`, opts.maxChars + 1500);
     }
     const labels = issue.labels.filter((l) => !opts.ignoreLabels.some((re) => re.test(l)));
-    return { issue, input: { title: issue.title, description: body, labels } };
+    return { issue, imageUrls: x?.urls ?? [], input: { title: issue.title, description: body, labels } };
   });
 
   const toTranslate = opts.translate ? inputs.filter((x) => needsTranslation(x.input)).length : 0;
@@ -52,11 +57,15 @@ export async function prepareIssues(issues: Issue[], opts: PrepareOptions): Prom
   if (translator) log(`翻译 ${toTranslate} 条含中日韩文字的 issue（已缓存的会跳过）...`);
 
   let done = 0;
-  return mapPool(inputs, opts.concurrency, async ({ issue, input }) => {
+  return mapPool(inputs, opts.concurrency, async ({ issue, imageUrls, input }) => {
     const t = translator
       ? await translator.translate(input)
       : { value: input, translated: false, cached: false };
     if (t.translated && ++done % 10 === 0) log(`  已翻译 ${done}/${toTranslate}`);
+    const images =
+      opts.images && imageUrls.length > 0
+        ? await loadIssueImages(opts.images, imageUrls, join(CACHE_DIR, "images"))
+        : undefined;
     return {
       iid: issue.iid,
       webUrl: issue.webUrl,
@@ -66,6 +75,8 @@ export async function prepareIssues(issues: Issue[], opts: PrepareOptions): Prom
       labels: t.value.labels,
       translated: t.translated,
       raw: issue,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+      images,
     };
   });
 }

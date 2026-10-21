@@ -1,6 +1,7 @@
 import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk";
 import { issueState } from "./dedupe.js";
 import { ISSUE_PATH_RE, projectUrlOf } from "./forge.js";
+import { imageKeys, imageRefs } from "./images.js";
 import type { Issue, PreparedIssue } from "./types.js";
 import { DiskCache, sha256 } from "./util.js";
 
@@ -87,15 +88,26 @@ export class DependencyJudge {
   }
 
   private async ask(first: PreparedIssue, second: PreparedIssue): Promise<{ value: CachedOrder; hit: boolean }> {
-    const state = { issue_a: issueState(first), issue_b: issueState(second) };
-    const key = sha256({ v: 1, model: this.model, state, questions: DEPS_QUESTIONS });
+    const state = {
+      issue_a: { ...issueState(first), ...imageRefs(first) },
+      issue_b: { ...issueState(second), ...imageRefs(second) },
+    };
+    const key = sha256({
+      v: 1,
+      model: this.model,
+      state: {
+        issue_a: { ...issueState(first), ...imageKeys(first) },
+        issue_b: { ...issueState(second), ...imageKeys(second) },
+      },
+      questions: DEPS_QUESTIONS,
+    });
     return this.cache.wrap<CachedOrder>(key, async () => {
       const res = await this.client.systemOne({ model: this.model, state, questions: DEPS_QUESTIONS });
       return {
         model: res.model,
         order: { ...res.answers.order.probabilities },
         explicit: res.answers.explicit.noul,
-        inputTokens: res.usage.input_tokens,
+        inputTokens: res.usage.input_tokens ?? 0,
       };
     });
   }

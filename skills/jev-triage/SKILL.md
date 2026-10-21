@@ -1,7 +1,7 @@
 ---
 name: jev-triage
 description: 使用 jev-triage CLI 分析 GitHub / GitLab issue 的重复、主题、类型和依赖，生成本地 HTML 流程图及 JSON/Markdown 报告。用于整理项目 backlog、查重复工单、核对执行顺序或输出 issue 总览；不负责代码审查或修改远端 issue。
-compatibility: Node.js >=20.12, gh (GitHub) or glab (GitLab) authenticated to the target host; TypeSafe API credentials for model analysis.
+compatibility: Node.js >=22, gh (GitHub) or glab (GitLab) authenticated to the target host; TypeSafe API credentials for model analysis.
 ---
 
 # Jev triage
@@ -16,7 +16,7 @@ CLI 随此 skill 一起分发。优先运行 `jev-triage --help`；若不在 PAT
 
 1. **确认目标。** 优先使用用户提供的项目/issue URL、GitHub owner/repo、GitLab 项目 ID 或 namespace/path；缺失时从当前仓库 remote 判断平台、主机与项目。多个候选时确认具体目标。主机名不含 github 的 GitHub Enterprise 加 `--forge github`。查看 `--help` 并用 `gh auth status` 或 `glab auth status` 核对目标主机登录，完成标准是得到唯一项目和可用的只读访问。
 2. **先看规模。** `jev-triage analyze --project "<ref>" --dry-run`。默认只分析 opened；显式传递用户要求的 state、label、limit、with-notes。查最新情况时加 `--refresh`；沿用缓存时记录 CLI 输出的拉取时间。此步不加 `--translate`，因此不调用模型。
-3. **分析。** 已获准把 issue 内容发送至配置的模型服务并承担费用时，执行 `jev-triage analyze --project "<ref>" --format json`，保留相同筛选范围。否则先交付 dry-run 结果并确认。只查重复时改用 `dedupe`。API key 放在环境变量或受控 env 文件，配置方式见 [README](../../README.md)；只核对是否存在，避免打印密钥。默认无需翻译，`--translate` 会额外发送内容至 LLM 服务。
+3. **分析。** 已获准把 issue 内容发送至配置的模型服务并承担费用时，执行 `jev-triage analyze --project "<ref>" --format json`，保留相同筛选范围。否则先交付 dry-run 结果并确认。只查重复时改用 `dedupe`。API key 放在环境变量或受控 env 文件，配置方式见 [README](../../README.md)；只核对是否存在，避免打印密钥。默认无需翻译，`--translate` 会额外发送内容至 LLM 服务。截图影响判断时加 `--images`：每条 issue 最多 4 张图经 gh/glab 登录态下载后随判定发送（Jev 读图为预览功能，缺图位置按文字占位），图片缓存在 `.cache/images`，会明显增加 tokens。
 4. **核对结果。** 根据 stderr 报告路径读取 HTML 和 JSON；确认 issue 数、依赖边数、循环、`unresolved`、重复组和待确认判断。复跑缓存不会证明数据是最新的；候选召回未命中也不证明绝无重复或依赖。
 5. **交付。** 返回 HTML 路径、关键发现、验证范围和待确认项。只有查看真实渲染和交互后才声称浏览器验收通过。提交仓库时排除 `.env`、缓存、报告和真实项目截图。
 

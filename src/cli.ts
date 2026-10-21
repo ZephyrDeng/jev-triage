@@ -65,6 +65,7 @@ const HELP = `jev-triage — GitHub / GitLab issue 分析（TypeSafe Jev）
   --dep-review <p>        P(方向) ≥ p 但未达阈值时待确认（默认 0.3）
   --type-min-conf <p>     类型置信度 < p 时标记「类型待确认」并展示 top-2 候选（默认 0.5，0 表示不标记）
   --concurrency <n>       并发请求数（默认 6）
+  --images                把 issue 中的截图交给 Jev 看图（每 issue 最多 4 张；Jev 读图为预览功能）
   --translate             先用 LLM 把 issue 翻译成英文再交给 Jev（默认直接用原文）
   --dry-run               只做清洗/候选召回（及翻译），不调用 Jev
   --out <dir>             报告输出目录（默认 out）
@@ -101,6 +102,7 @@ function parse() {
       "type-min-conf": { type: "string", default: String(DEFAULT_TYPE_MIN_CONF) },
       concurrency: { type: "string", default: "6" },
       translate: { type: "boolean", default: false },
+      images: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
       out: { type: "string", default: "out" },
       help: { type: "boolean", short: "h", default: false },
@@ -121,7 +123,7 @@ interface Prepared {
   exhaustive: boolean;
 }
 
-async function prepare(values: Values, withLinks: boolean): Promise<Prepared> {
+async function prepare(values: Values, withLinks: boolean, withImages: boolean): Promise<Prepared> {
   const { forge, host, project } = projectRef(values);
   const state = values.state as "opened" | "closed" | "all";
   if (!["opened", "closed", "all"].includes(state)) throw new Error(`--state 取值无效: ${state}`);
@@ -141,6 +143,7 @@ async function prepare(values: Values, withLinks: boolean): Promise<Prepared> {
     ignoreLabels: (values["ignore-label"] ?? []).map((r) => new RegExp(r)),
     concurrency: Number(values.concurrency),
     translate: values.translate,
+    images: withImages ? { forge, host, project } : undefined,
   });
   const byId = new Map<number, PreparedIssue>(prepared.map((p) => [p.iid, p]));
   const docs: Doc[] = prepared.map((p) => ({ id: p.iid, title: p.title, body: `${p.labels.join(" ")}\n${p.description}` }));
@@ -357,12 +360,12 @@ async function main() {
   loadEnv();
 
   if (cmd === "fetch") {
-    const p = await prepare({ ...values, translate: false }, false);
+    const p = await prepare({ ...values, translate: false }, false, false);
     for (const i of p.issues) console.log(`#${i.iid}\t${i.title}`);
     return;
   }
 
-  const p = await prepare(values, cmd === "analyze");
+  const p = await prepare(values, cmd === "analyze", values.images && !values["dry-run"]);
   log(
     p.exhaustive
       ? `候选对 ${p.pairs.length} 个（issue 较少，全量两两比较）`
@@ -376,7 +379,11 @@ async function main() {
     return;
   }
 
-  const client = new TypeSafeClient({ timeout: 30_000 });
+  const client = new TypeSafeClient({
+    timeout: 30_000,
+    // 含图片的请求必须带预览开关 header；对纯文本请求无影响
+    defaultHeaders: values.images ? { "TypeSafe-Danger-Zone-Images": "true" } : undefined,
+  });
   await mkdir(values.out, { recursive: true });
 
   // ---- 去重 ----

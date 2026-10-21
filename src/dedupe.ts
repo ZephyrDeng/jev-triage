@@ -1,5 +1,6 @@
 import { noul, score, TypeSafeClient } from "@typesafe-ai/sdk";
 import type { CandidatePair } from "./candidates.js";
+import { imageKeys, imageRefs } from "./images.js";
 import type { PreparedIssue } from "./types.js";
 import { DiskCache, sha256 } from "./util.js";
 
@@ -95,8 +96,16 @@ export class DedupeJudge {
   }
 
   async judge(pair: CandidatePair, a: PreparedIssue, b: PreparedIssue): Promise<PairJudgment> {
-    const state = { issue_a: issueState(a), issue_b: issueState(b) };
-    const key = sha256({ v: 1, model: this.model, state, questions: DEDUPE_QUESTIONS });
+    const state = {
+      issue_a: { ...issueState(a), ...imageRefs(a) },
+      issue_b: { ...issueState(b), ...imageRefs(b) },
+    };
+    const key = sha256({
+      v: 1,
+      model: this.model,
+      state: { issue_a: { ...issueState(a), ...imageKeys(a) }, issue_b: { ...issueState(b), ...imageKeys(b) } },
+      questions: DEDUPE_QUESTIONS,
+    });
     const { value, hit } = await this.cache.wrap<CachedAnswer>(key, async () => {
       const res = await this.client.systemOne({ model: this.model, state, questions: DEDUPE_QUESTIONS });
       return {
@@ -112,7 +121,7 @@ export class DedupeJudge {
           a_covers_b: { noul: res.answers.a_covers_b.noul },
           b_covers_a: { noul: res.answers.b_covers_a.noul },
         },
-        inputTokens: res.usage.input_tokens,
+        inputTokens: res.usage.input_tokens ?? 0,
       };
     });
     const pr = value.answers.relation.probabilities;
