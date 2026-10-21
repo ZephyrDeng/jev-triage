@@ -8,9 +8,27 @@ import { test } from "node:test";
 
 const entry = resolve("src/cli.ts");
 const loader = import.meta.resolve("tsx");
-const run = (cwd: string, ...args: string[]) => spawnSync(process.execPath, ["--import", loader, entry, ...args], {
+const runEnv = (cwd: string, extraEnv: Record<string, string>, ...args: string[]) => spawnSync(process.execPath, ["--import", loader, entry, ...args], {
   cwd, encoding: "utf8", timeout: 15_000,
-  env: { ...process.env, TYPESAFE_API_KEY: "offline-test", TYPESAFE_ENV_FILE: "/not-used" },
+  env: { ...process.env, TYPESAFE_API_KEY: "offline-test", TYPESAFE_ENV_FILE: "/not-used", TYPESAFE_BASE_URL: "", TYPESAFE_DEFAULT_MODEL: "", ...extraEnv },
+});
+const run = (cwd: string, ...args: string[]) => runEnv(cwd, {}, ...args);
+
+test("--show-config reports the effective Jev endpoint and masks the key", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jev-triage-config-"));
+  try {
+    const dflt = run(dir, "--show-config");
+    assert.equal(dflt.status, 0, dflt.stderr);
+    assert.match(dflt.stdout, /https:\/\/api\.typesafe\.ai/);
+    assert.match(dflt.stdout, /jev-latest/);
+    assert.match(dflt.stdout, /\*{4}test/);
+    assert.doesNotMatch(dflt.stdout, /offline-test/); // key 不回显
+    const zen = runEnv(dir, { TYPESAFE_BASE_URL: "https://zenmux.ai/api/", TYPESAFE_DEFAULT_MODEL: "typesafe/jev-1.14" }, "--show-config");
+    assert.equal(zen.status, 0, zen.stderr);
+    assert.match(zen.stdout, /https:\/\/zenmux\.ai\/api\/v1\/systemone/); // 尾斜杠归一化
+    assert.match(zen.stdout, /typesafe\/jev-1\.14/);
+    assert.match(zen.stdout, /非 TypeSafe 官方端点/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("CLI metadata and bundled skill work outside the repo without loading .env", () => {

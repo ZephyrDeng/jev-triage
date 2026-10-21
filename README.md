@@ -8,7 +8,7 @@ jev-triage analyze --project owner/repo --dry-run        # recall only, no model
 jev-triage analyze --project https://gitlab.com/group/proj # full analysis → out/overview-*.html
 ```
 
-Requires Node.js ≥ 22, `gh` or `glab` logged in to the target host, and `TYPESAFE_API_KEY` for model analysis. `--images` also passes issue screenshots (up to 4 per issue) to Jev; image reading is a preview feature behind a per-request header. CLI output and reports are currently in Chinese.
+Requires Node.js ≥ 22, `gh` or `glab` logged in to the target host, and `TYPESAFE_API_KEY` for model analysis. Jev's endpoint is configurable through `TYPESAFE_BASE_URL` (default TypeSafe; e.g. `https://zenmux.ai/api` for ZenMux) — run `jev-triage --show-config` to print the effective endpoint, model and a masked key. `--images` also passes issue screenshots (up to 4 per issue) to Jev; image reading is a preview feature behind a per-request header. CLI output and reports are currently in Chinese.
 
 Independent community project, not affiliated with or endorsed by TypeSafe. "Jev" refers to TypeSafe's model, which this tool calls through the official SDK.
 
@@ -118,6 +118,28 @@ npm run dev -- dedupe --project owner/repo --ignore-label '^release:'
 `npm run dev -- --help` 查看全部参数。所有中间结果缓存在工作目录的 `.cache/`，重跑仅对未命中的模型输入计费；查看最新 issue 时加 `--refresh`。只读 `fetch` 和不带 `--translate` 的 dry-run 不调用模型；正式分析会把清洗后的 issue 内容发送至 TypeSafe，翻译另需 LLM 配置与费用。
 
 API key 使用环境变量或工作目录 `.env`；`TYPESAFE_ENV_FILE` 可指定备用 env 文件（默认 `~/.config/ego-jev/secrets.env`）。报告和缓存包含项目数据，私有项目的报告不要公开上传。
+
+## Jev 端点与模型
+
+Jev 调用统一走 `@typesafe-ai/sdk`：端点由 SDK 的 `baseURL` 决定，请求路径固定为 `{baseURL}/v1/systemone`，鉴权为 `Authorization: Bearer <key>`。任何兼容该协议的网关（如 ZenMux）都能替换，不需要改代码。
+
+| 环境变量 | 作用 | 默认 |
+|---|---|---|
+| `TYPESAFE_API_KEY` | 端点对应的 API key | 无（未设置时读 `TYPESAFE_ENV_FILE`） |
+| `TYPESAFE_BASE_URL` | Jev API 根地址，SDK 自动拼 `/v1/systemone` | `https://api.typesafe.ai` |
+| `TYPESAFE_DEFAULT_MODEL` | Jev 模型 id | `jev-latest` |
+| `TYPESAFE_ENV_FILE` | 备用 env 文件 | `~/.config/ego-jev/secrets.env` |
+
+经 ZenMux 调用：
+
+```bash
+TYPESAFE_BASE_URL=https://zenmux.ai/api   # 根地址，不要写完整 /v1/systemone
+TYPESAFE_API_KEY=<ZENMUX_API_KEY>         # 填 ZenMux 的 key
+TYPESAFE_DEFAULT_MODEL=typesafe/jev-1.14
+jev-triage --show-config                  # 查看生效的端点、模型和脱敏后的 key
+```
+
+`--show-config` 打印当前生效配置后退出；正式分析启动时也会在 stderr 提示端点。`TYPESAFE_BASE_URL` 只给 API 根地址，带了完整 `/v1/systemone` 会拼成重复路径而 404。第三方网关下 `--images`（读图）未验证，可能不受支持。key 仅以脱敏形式展示，报告不包含 key。
 
 CLI 只读，不会自动关闭、合并或修改 issue。类型置信度低于 `--type-min-conf`（默认 0.5，0 表示不标记）的 issue 会列入「类型待确认」并展示 top-2 候选，JSON 中为 `types[].needsReview`。模型分类置信度与阈值仍需校准，依赖分层不是业务优先级排序。
 

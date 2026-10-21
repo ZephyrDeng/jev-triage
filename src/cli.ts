@@ -8,7 +8,7 @@ import { renderOverview } from "./ascii.js";
 import { renderHtml } from "./html.js";
 import { allPairs, recallCandidates, type CandidatePair, type Doc } from "./candidates.js";
 import { DEFAULT_TYPE_MIN_CONF, IssueClassifier, needsTypeReview, type IssueClassification } from "./classify.js";
-import { defaultHost, loadEnv } from "./config.js";
+import { defaultHost, isOfficialJevEndpoint, jevBaseURL, jevModel, loadEnv, maskSecret } from "./config.js";
 import { clusterDuplicates, clusterRelated, DedupeJudge, type DuplicateGroup, type PairJudgment } from "./dedupe.js";
 import {
   analyzeGraph,
@@ -49,6 +49,7 @@ const HELP = `jev-triage — GitHub / GitLab issue 分析（TypeSafe Jev）
   --limit <n>             最多处理 n 条（按更新时间倒序）
   --with-notes            把非系统评论也作为内容
   --refresh               忽略本地缓存，重新拉取 issue
+  --show-config           打印当前 Jev 端点、模型和 key 来源（key 脱敏）后退出
 
 分析选项:
   --all-pairs-max <n>     两两组合数 ≤ n 时不做召回，直接全量判断（默认 200）
@@ -71,6 +72,14 @@ const HELP = `jev-triage — GitHub / GitLab issue 分析（TypeSafe Jev）
   --out <dir>             报告输出目录（默认 out）
   --format <format>       analyze 标准输出：html（默认，输出路径）| ascii | json
                          三种报告文件始终生成，进度写入 stderr
+
+环境变量:
+  TYPESAFE_API_KEY        Jev API key；key 属于所配置端点（默认从 TYPESAFE_ENV_FILE 读取）
+  TYPESAFE_BASE_URL       Jev API 根地址（默认 https://api.typesafe.ai），SDK 自动拼 /v1/systemone
+                          经 ZenMux：TYPESAFE_BASE_URL=https://zenmux.ai/api
+  TYPESAFE_DEFAULT_MODEL  Jev 模型（默认 jev-latest；ZenMux 建议 typesafe/jev-1.14）
+  TYPESAFE_ENV_FILE       备用 env 文件（默认 ~/.config/ego-jev/secrets.env）
+  LLM_BASE_URL / LLM_API_KEY / LLM_MODEL  --translate 使用的翻译 LLM
 `;
 
 type Values = ReturnType<typeof parse>["values"];
@@ -107,6 +116,7 @@ function parse() {
       out: { type: "string", default: "out" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
+      "show-config": { type: "boolean", default: false },
       path: { type: "boolean", default: false },
       format: { type: "string", default: "html" },
     },
@@ -163,8 +173,16 @@ function outBase(values: Values, kind: string): string {
   return join(values.out, `${kind}-${project.replace(/[^\w.-]+/g, "_")}`);
 }
 
-function jevModel(): string {
-  return process.env.TYPESAFE_DEFAULT_MODEL ?? "jev-latest";
+/** `--show-config` 与启动提示共用；不回显 key。 */
+function renderConfig(): string {
+  const baseURL = jevBaseURL();
+  const official = isOfficialJevEndpoint(baseURL);
+  return [
+    `Jev 端点    ${baseURL}（POST ${baseURL}/v1/systemone）`,
+    `Jev 模型    ${jevModel()}`,
+    `Jev API key ${maskSecret(process.env.TYPESAFE_API_KEY)}（TYPESAFE_API_KEY）`,
+    `端点提示    ${official ? "TypeSafe 官方端点" : "非 TypeSafe 官方端点：key 必须属于该服务，--images 读图在第三方网关未验证"}`,
+  ].join("\n");
 }
 
 async function runDedupe(values: Values, p: Prepared, client: TypeSafeClient) {
@@ -333,6 +351,11 @@ async function main() {
     console.log(JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")).version);
     return;
   }
+  if (values["show-config"]) {
+    loadEnv();
+    console.log(renderConfig());
+    return;
+  }
   if (values.help || !cmd) {
     console.log(HELP);
     process.exit(values.help ? 0 : 1);
@@ -380,11 +403,13 @@ async function main() {
   }
 
   const client = new TypeSafeClient({
+    baseURL: jevBaseURL(),
     timeout: 30_000,
     // 含图片的请求必须带预览开关 header；对纯文本请求无影响
     defaultHeaders: values.images ? { "TypeSafe-Danger-Zone-Images": "true" } : undefined,
   });
   await mkdir(values.out, { recursive: true });
+  if (!isOfficialJevEndpoint(jevBaseURL())) log(`Jev 端点：${jevBaseURL()}/v1/systemone · 模型 ${jevModel()}（非 TypeSafe 官方端点，key 必须属于该服务）`);
 
   // ---- 去重 ----
   const dd = await runDedupe(values, p, client);

@@ -56,3 +56,29 @@ export function llmConfig(): LlmConfig {
 export function defaultHost(): string {
   return process.env.FORGE_HOST ?? "github.com";
 }
+
+/** Jev API 根地址；SDK 会在此基础上拼 `/v1/systemone`。 */
+export function jevBaseURL(): string {
+  return (process.env.TYPESAFE_BASE_URL?.trim() || "https://api.typesafe.ai").replace(/\/+$/, "");
+}
+
+/** Jev 模型 id；第三方网关可用带前缀的形式（如 typesafe/jev-1.14）。 */
+export function jevModel(): string {
+  return process.env.TYPESAFE_DEFAULT_MODEL?.trim() || "jev-latest";
+}
+
+/** 当前 Jev 端点是否为 TypeSafe 官方；其余按第三方网关处理。 */
+export function isOfficialJevEndpoint(baseURL: string): boolean {
+  try {
+    const host = new URL(baseURL).hostname;
+    return host === "typesafe.ai" || host.endsWith(".typesafe.ai");
+  } catch {
+    return false;
+  }
+}
+
+/** key 仅保留末 4 位，用于配置展示，避免回显凭据。 */
+export function maskSecret(value: string | undefined): string {
+  if (!value) return "(未设置)";
+  return value.length <= 4 ? "****" : `****${value.slice(-4)}`;
+}
